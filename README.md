@@ -1,2 +1,2 @@
-# frontend-synora
-frontend of main SYNORA repo
+# frontend
+Frontend of main SYNORA repo
