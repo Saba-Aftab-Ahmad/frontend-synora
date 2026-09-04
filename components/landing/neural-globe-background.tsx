@@ -26,21 +26,6 @@ function rotateX(p: Vec3, angle: number): Vec3 {
   return { x: p.x, y: p.y * c - p.z * s, z: p.y * s + p.z * c }
 }
 
-function slerp(a: Vec3, b: Vec3, t: number): Vec3 {
-  const dot = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z))
-  const theta = Math.acos(dot) * t
-  let rx = b.x - a.x * dot
-  let ry = b.y - a.y * dot
-  let rz = b.z - a.z * dot
-  const len = Math.sqrt(rx * rx + ry * ry + rz * rz) || 1
-  rx /= len
-  ry /= len
-  rz /= len
-  const s = Math.sin(theta)
-  const c = Math.cos(theta)
-  return { x: a.x * c + rx * s, y: a.y * c + ry * s, z: a.z * c + rz * s }
-}
-
 // Rough continent silhouettes approximated as overlapping ellipses in lat/lon
 // space. Not geographically precise — a stylised, recognisable dot-matrix
 // world map for a background animation.
@@ -79,17 +64,17 @@ function isLand(latDeg: number, lonDeg: number): boolean {
 
 type LandDot = { base: Vec3; size: number; phase: number; major: boolean }
 type MeshEdge = { a: number; b: number }
-type Arc = { a: Vec3; b: Vec3; height: number; period: number; offset: number }
+type SurfaceOrbit = { tilt: number; spin: number; radiusFactor: number; period: number; offset: number; color: "cyan" | "purple" }
 type Star = { fx: number; fy: number; r: number; phase: number; warm: boolean }
 type Ring = { tilt: number; radiusFactor: number; period: number; offset: number; color: "cyan" | "amber" }
 
 /**
  * Animated hero background: a slowly rotating, Earth-like dotted globe with
  * warm "city light" nodes on its continents, a faint triangulated mesh
- * connecting nearby nodes, glowing data-transfer arcs sweeping between
- * distant points, and orbiting rings — evoking federated-learning clients
- * around the world exchanging model updates. Styled after night-earth /
- * global-network stock imagery (warm amber lights + cool blue network).
+ * connecting nearby nodes, glowing "neuron" pulses traveling around perfectly
+ * circular surface orbits, and orbiting rings — evoking federated-learning
+ * clients around the world exchanging model updates. Styled after night-earth
+ * / global-network stock imagery (warm amber lights + cool blue network).
  *
  * Pure canvas + requestAnimationFrame, no external deps. Respects
  * prefers-reduced-motion by rendering a single static frame.
@@ -156,20 +141,15 @@ export function NeuralGlobeBackground() {
       }
     }
 
-    // ---- Data-transfer arcs between distant random land points ----
-    const ARC_COUNT = 9
-    const arcs: Arc[] = []
-    for (let i = 0; i < ARC_COUNT; i++) {
-      const a = landDots[Math.floor(Math.random() * landDots.length)]
-      const b = landDots[Math.floor(Math.random() * landDots.length)]
-      arcs.push({
-        a: a.base,
-        b: b.base,
-        height: 0.2 + Math.random() * 0.25,
-        period: 2400 + Math.random() * 2600,
-        offset: Math.random() * 1000,
-      })
-    }
+    // ---- Surface orbit loops — perfectly circular, symmetric "neuron" paths
+    // that hug the globe surface (replaces the old random point-to-point
+    // arcs). No static guide-line is drawn — the circle is shown purely by
+    // the synchronized motion of evenly-spaced traveling pulses, never random.
+    const surfaceOrbits: SurfaceOrbit[] = [
+      { tilt: 0.9, spin: 0, radiusFactor: 1.02, period: 5200, offset: 0, color: "cyan" },
+      { tilt: 0.9, spin: (2 * Math.PI) / 3, radiusFactor: 1.02, period: 5200, offset: 1733, color: "purple" },
+      { tilt: 0.9, spin: (4 * Math.PI) / 3, radiusFactor: 1.02, period: 5200, offset: 3467, color: "cyan" },
+    ]
 
     // ---- Static starfield ----
     const STAR_COUNT = 150
@@ -351,55 +331,29 @@ export function NeuralGlobeBackground() {
         ctx.fill()
       })
 
-      // Data-transfer arcs — cool blue sweeping curves with a traveling pulse
-      arcs.forEach((arc) => {
-        const rgb = [103, 200, 255]
-        const STEPS = 24
-        let prev: { sx: number; sy: number; depth: number } | null = null
-        let visibleCount = 0
-        for (let s = 0; s <= STEPS; s++) {
-          const t = s / STEPS
-          const mid = slerp(arc.a, arc.b, t)
-          const elev = 1 + arc.height * Math.sin(Math.PI * t)
-          const p = project(
-            { x: mid.x * elev, y: mid.y * elev, z: mid.z * elev },
-            cx,
-            cy,
-            radius,
-            focal
-          )
-          if (prev && p.depth > 0.42 && prev.depth > 0.42) {
-            const avg = (p.depth + prev.depth) / 2
-            visibleCount++
-            ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${0.2 + avg * 0.45})`
-            ctx.lineWidth = 1.4
-            ctx.beginPath()
-            ctx.moveTo(prev.sx, prev.sy)
-            ctx.lineTo(p.sx, p.sy)
-            ctx.stroke()
-          }
-          prev = { sx: p.sx, sy: p.sy, depth: p.depth }
-        }
+      // Traveling neuron pulses — perfectly circular, symmetric orbits.
+      // No static guide-line is drawn; the circular path is shown purely
+      // through the synchronized motion of evenly-spaced pulses (never random).
+      surfaceOrbits.forEach((orbit) => {
+        const rgb = orbit.color === "cyan" ? [103, 200, 255] : [167, 139, 250]
+        const rr = radius * orbit.radiusFactor
+        const PULSES_PER_ORBIT = 3
 
-        if (visibleCount > 0) {
-          const t = ((time + arc.offset) % arc.period) / arc.period
-          const mid = slerp(arc.a, arc.b, t)
-          const elev = 1 + arc.height * Math.sin(Math.PI * t)
-          const pp = project(
-            { x: mid.x * elev, y: mid.y * elev, z: mid.z * elev },
-            cx,
-            cy,
-            radius,
-            focal
-          )
-          if (pp.depth > 0.42) {
-            const pulseAlpha = Math.sin(t * Math.PI) * (0.6 + pp.depth * 0.4)
-            const glow = ctx.createRadialGradient(pp.sx, pp.sy, 0, pp.sx, pp.sy, 6)
-            glow.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${pulseAlpha})`)
+        for (let k = 0; k < PULSES_PER_ORBIT; k++) {
+          const pulseOffset = k / PULSES_PER_ORBIT
+          const baseFrac = (time / orbit.period + orbit.offset / orbit.period) % 1
+          const t = ((baseFrac + pulseOffset) % 1) * Math.PI * 2
+          let pp: Vec3 = { x: Math.cos(t), y: 0, z: Math.sin(t) }
+          pp = rotateX(pp, orbit.tilt)
+          pp = rotateY(pp, orbit.spin)
+          const pulseProj = project(pp, cx, cy, rr, focal)
+          if (pulseProj.depth > 0.45) {
+            const glow = ctx.createRadialGradient(pulseProj.sx, pulseProj.sy, 0, pulseProj.sx, pulseProj.sy, 6)
+            glow.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.95)`)
             glow.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`)
             ctx.fillStyle = glow
             ctx.beginPath()
-            ctx.arc(pp.sx, pp.sy, 6, 0, Math.PI * 2)
+            ctx.arc(pulseProj.sx, pulseProj.sy, 6, 0, Math.PI * 2)
             ctx.fill()
           }
         }
