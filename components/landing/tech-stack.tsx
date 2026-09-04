@@ -36,7 +36,7 @@ export function TechStack() {
     <section 
       id="powered-by" 
       className="relative py-24 md:py-32 border-t border-border bg-[#060810]/85 backdrop-blur-[2px]"
-      style={{ backgroundColor: '#060810' }}
+      /* style={{ backgroundColor: '#060810' }} */
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
