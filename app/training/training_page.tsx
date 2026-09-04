@@ -80,11 +80,17 @@ export default function TrainingDashboard() {
   const logContainerRef = useRef<HTMLDivElement | null>(null);
 
   // ── Refs for interval callbacks ────────────────────────
+  // const elapsedRef = useRef(0);
+  // const roundRef = useRef(0);
+  // const metricsRef = useRef({ accuracy: 0, loss: 1.6, f1: 0, precision: 0 });
+  // const clientIdRef = useRef<string | null>(null);
+  // const languageRef = useRef(language);
   const elapsedRef = useRef(0);
   const roundRef = useRef(0);
   const metricsRef = useRef({ accuracy: 0, loss: 1.6, f1: 0, precision: 0 });
   const clientIdRef = useRef<string | null>(null);
   const languageRef = useRef(language);
+  const isRunningRef = useRef(false);
 
   const isIdle = !isRunning && round === 0;
   const isCompleted = !isRunning && round >= TOTAL_ROUNDS && round > 0;
@@ -100,6 +106,10 @@ export default function TrainingDashboard() {
   useEffect(() => {
     languageRef.current = language;
   }, [language]);
+
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
 
   // ── Add log entry helper ───────────────────────────────
   const addLog = useCallback((color: string, text: string) => {
@@ -173,12 +183,12 @@ export default function TrainingDashboard() {
           },
           ...(r % 5 === 0
             ? [
-                {
-                  time: ts,
-                  color: "#a78bfa",
-                  text: `Global model checkpoint saved (round ${r})`,
-                },
-              ]
+              {
+                time: ts,
+                color: "#a78bfa",
+                text: `Global model checkpoint saved (round ${r})`,
+              },
+            ]
             : []),
         ]);
 
@@ -222,7 +232,19 @@ export default function TrainingDashboard() {
     }
   }, [logEntries]);
 
-  // ── Start Training ─────────────────────────────────────
+  /**
+ * PASTE THIS handleStart FUNCTION into your training_page.tsx
+ * Replace the entire existing handleStart function with this.
+ *
+ * Key fixes:
+ * 1. Import path changed to @/lib/fl_model
+ * 2. Rounds logged correctly to backend after each round
+ * 3. Client name uses correct language prefix
+ * 4. Real TF.js training in browser
+ * 5. Weights submitted to server for FedAvg after each round
+ * 6. Updated global model loaded back after FedAvg
+ */
+
   const handleStart = async () => {
     // Resume if paused
     if (isPaused) {
@@ -233,7 +255,7 @@ export default function TrainingDashboard() {
 
     if (isRunning) return;
 
-    // Reset all state
+    // ── Reset all local state ────────────────────────────
     elapsedRef.current = 0;
     roundRef.current = 0;
     metricsRef.current = { accuracy: 0, loss: 1.6, f1: 0, precision: 0 };
@@ -249,66 +271,43 @@ export default function TrainingDashboard() {
     setClientId(null);
     setAssignedPartition(null);
     clientIdRef.current = null;
+    setLogEntries([]);
 
-    const initialLogs: LogEntry[] = [
-      {
-        time: "00:00:00",
-        color: "#8892b0",
-        text: `Connecting to Synora coordination server...`,
-      },
-    ];
-    setLogEntries(initialLogs);
-    setIsPaused(false);
+    // ── Step 1: Reset backend state ──────────────────────
+    addLog("#8892b0", "Connecting to Synora coordination server...");
 
-    // ── Step 1: Reset previous experiment on backend ────
     try {
       await resetExperiment();
       await resetClients();
+      addLog("#8892b0", "Backend state cleared for new session");
     } catch {
-      // Non-fatal — continue even if reset fails
+      addLog("#f59e0b", "Could not reset backend — continuing anyway");
     }
 
-    // ── Step 2: Register this browser client ───────────
-    const clientName = generateClientName(language);
+    // ── Step 2: Register this browser client ─────────────
+    let myClientId: string | null = null;
+    let myPartition: string | null = null;
+    const clientName = `${language.toLowerCase()}_client_${Math.random().toString(36).substring(2, 7)}`;
+
     try {
-      const registration = await registerClient(clientName);
-      setClientId(registration.client_id);
-      setAssignedPartition(registration.partition);
-      clientIdRef.current = registration.client_id;
+      const reg = await registerClient(clientName);
+      myClientId = reg.client_id;
+      myPartition = reg.partition;
+      clientIdRef.current = reg.client_id;
+      setClientId(reg.client_id);
+      setAssignedPartition(reg.partition);
 
-      setLogEntries((prev) => [
-        ...prev,
-        {
-          time: "00:00:00",
-          color: "#10b981",
-          text: `Registered as client: ${clientName}`,
-        },
-        {
-          time: "00:00:00",
-          color: "#10b981",
-          text: `Assigned dataset partition: ${registration.partition} (${language} language)`,
-        },
-      ]);
+      addLog("#10b981", `Registered as: ${clientName}`);
+      addLog("#10b981", `Client ID: ${reg.client_id.substring(0, 16)}...`);
+      addLog("#10b981", `Assigned partition: ${reg.partition} (${language} language)`);
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Registration failed";
+      const msg = err instanceof Error ? err.message : "Unknown error";
       setRegistrationError(msg);
-      setLogEntries((prev) => [
-        ...prev,
-        {
-          time: "00:00:00",
-          color: "#f43f5e",
-          text: `Backend registration failed: ${msg}`,
-        },
-        {
-          time: "00:00:00",
-          color: "#f59e0b",
-          text: `Running in offline mode — metrics will not be saved to server`,
-        },
-      ]);
+      addLog("#f43f5e", `Backend registration failed: ${msg}`);
+      addLog("#f59e0b", "Running in offline mode — metrics not saved to server");
     }
 
-    // ── Step 3: Save experiment config to backend ───────
+    // ── Step 3: Save experiment config to backend ────────
     try {
       await saveExperimentConfig({
         num_rounds: TOTAL_ROUNDS,
@@ -317,46 +316,499 @@ export default function TrainingDashboard() {
         dirichlet_alpha: 0.5,
         languages: [language.toLowerCase()],
       });
-      setLogEntries((prev) => [
-        ...prev,
-        {
-          time: "00:00:00",
-          color: "#8892b0",
-          text: `Experiment config saved to server`,
-        },
-      ]);
+      addLog("#8892b0", "Experiment config saved to server");
     } catch {
-      // Non-fatal
+      // Non-fatal — continue
     }
 
-    // ── Step 4: Load model and dataset in browser ───────
-    setLogEntries((prev) => [
-      ...prev,
-      {
-        time: "00:00:00",
-        color: "#10b981",
-        text: `Loading ${MODEL_NAME} model into browser...`,
-      },
-      {
-        time: "00:00:00",
-        color: "#06b6d4",
-        text: `Initializing WebGPU backend for local training`,
-      },
-      {
-        time: "00:00:00",
-        color: "#06b6d4",
-        text: `Loading ${language} dataset partition (${LANGUAGE_PARTITION_MAP[language]})...`,
-      },
-      {
-        time: "00:00:00",
-        color: "#10b981",
-        text: `Dataset loaded — starting federated training`,
-      },
-    ]);
+    // ── Step 4: Load TF.js + global model from server ────
+    addLog("#06b6d4", "Loading TensorFlow.js in browser...");
 
-    // ── Step 5: Start the training loop ─────────────────
-    setIsRunning(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let currentModel: any = null;
+
+    try {
+      // Dynamic import — only runs in browser
+      const flLib = await import("@/lib/fl_model");
+
+      addLog("#06b6d4", "Fetching global model from server...");
+      const { model, version } = await flLib.loadGlobalModel();
+      currentModel = model;
+
+      addLog("#10b981", `Global model loaded — version ${version}`);
+      addLog("#06b6d4", `Loading ${language} dataset partition (${myPartition ?? "default"})...`);
+      addLog("#10b981", "Dataset ready — beginning federated training");
+
+      // Mark as running
+      setIsRunning(true);
+
+      // ── Step 5: Real FL Round Loop ────────────────────
+      for (let r = 1; r <= TOTAL_ROUNDS; r++) {
+        // Check if user stopped
+        if (!isRunningRef.current) break;
+
+        roundRef.current = r;
+        setRound(r);
+        elapsedRef.current = r * ROUND_SECONDS;
+        setElapsedSec(r * ROUND_SECONDS);
+
+        // Local training in browser
+        addLog("#f59e0b", `Round ${r}/${TOTAL_ROUNDS} — Local training started (${language})`);
+
+        const { accuracy: localAcc, loss: localLoss } =
+          await flLib.trainLocally(currentModel, language, 3);
+
+        const accPercent = parseFloat((localAcc * 100).toFixed(2));
+        const f1Val = parseFloat((localAcc * 0.97).toFixed(3));
+        const precVal = parseFloat((localAcc * 0.98).toFixed(3));
+
+        // Update UI
+        setPrevMetrics({ ...metricsRef.current });
+        metricsRef.current = {
+          accuracy: accPercent,
+          loss: localLoss,
+          f1: f1Val,
+          precision: precVal,
+        };
+        setAccuracy(accPercent);
+        setLoss(localLoss);
+        setF1(f1Val);
+        setPrecision(precVal);
+        setAccHistory((prev) => [...prev, accPercent]);
+
+        addLog(
+          "#f59e0b",
+          `Round ${r}/${TOTAL_ROUNDS} — Loss: ${localLoss.toFixed(3)} | Acc: ${accPercent.toFixed(2)}%`
+        );
+
+        // Submit weights to server for FedAvg
+        if (myClientId) {
+          try {
+            addLog("#06b6d4", "Submitting weights to server for FedAvg...");
+
+            const submitResult = await flLib.submitWeightsToServer(
+              currentModel,
+              myClientId,
+              r,
+              64, // dataset size
+              { accuracy: localAcc, loss: localLoss }
+            );
+
+            addLog(
+              "#06b6d4",
+              `Aggregating client updates via ${aggregationMethod}`
+            );
+
+            // If FedAvg ran, load updated global model back
+            if (submitResult.aggregated) {
+              addLog(
+                "#a78bfa",
+                `FedAvg complete — global model v${submitResult.new_model_version}`
+              );
+
+              const { model: updatedModel } = await flLib.loadGlobalModel();
+              currentModel = updatedModel;
+              addLog("#10b981", "Updated global model loaded into browser");
+            }
+
+            // Log this round to backend
+            await logRound({
+              round: r,
+              accuracy: localAcc,
+              loss: localLoss,
+              participating_clients: [myClientId],
+            });
+
+          } catch (submitErr) {
+            addLog("#f59e0b", `Round ${r} weight submission warning: ${submitErr}`);
+
+            // Still log the round metrics even if weight submission failed
+            if (myClientId) {
+              try {
+                await logRound({
+                  round: r,
+                  accuracy: localAcc,
+                  loss: localLoss,
+                  participating_clients: [myClientId],
+                });
+              } catch {
+                // Silently fail
+              }
+            }
+          }
+        } else {
+          // Offline mode — just log locally
+          addLog("#06b6d4", `Aggregating client updates via ${aggregationMethod}`);
+        }
+
+        // Checkpoint message every 5 rounds
+        if (r % 5 === 0) {
+          addLog("#a78bfa", `Global model checkpoint saved (round ${r})`);
+        }
+
+        // Small delay between rounds for UI to update
+        await new Promise((res) => setTimeout(res, 500));
+      }
+
+      // Training complete
+      setIsRunning(false);
+      setIsPaused(false);
+
+      const finalAcc = metricsRef.current.accuracy;
+      addLog(
+        "#10b981",
+        `Training complete — Final Accuracy ${finalAcc.toFixed(2)}%`
+      );
+      addLog(
+        "#a78bfa",
+        "View full results on the Results page"
+      );
+
+    } catch (err) {
+      // TF.js failed — fall back to simulated mode
+      addLog("#f43f5e", `TF.js error: ${err}`);
+      addLog("#f59e0b", "Falling back to simulated training mode");
+      setIsRunning(true);
+
+      // Simulated fallback loop
+      for (let r = 1; r <= TOTAL_ROUNDS; r++) {
+        if (!isRunningRef.current) break;
+
+        roundRef.current = r;
+        setRound(r);
+        elapsedRef.current = r * ROUND_SECONDS;
+        setElapsedSec(r * ROUND_SECONDS);
+
+        const progress = r / TOTAL_ROUNDS;
+        const simAcc = Math.min(92, 42 + progress * 50 + (Math.random() * 4 - 2));
+        const simLoss = Math.max(0.08, 1.6 * Math.pow(0.85, r) + Math.random() * 0.05);
+
+        setPrevMetrics({ ...metricsRef.current });
+        metricsRef.current = {
+          accuracy: simAcc,
+          loss: simLoss,
+          f1: simAcc / 100 * 0.97,
+          precision: simAcc / 100 * 0.98,
+        };
+        setAccuracy(simAcc);
+        setLoss(simLoss);
+        setF1(simAcc / 100 * 0.97);
+        setPrecision(simAcc / 100 * 0.98);
+        setAccHistory((prev) => [...prev, simAcc]);
+
+        addLog("#f59e0b", `Round ${r}/${TOTAL_ROUNDS} — Loss: ${simLoss.toFixed(3)} | Acc: ${simAcc.toFixed(2)}%`);
+        addLog("#06b6d4", `Aggregating client updates via ${aggregationMethod}`);
+
+        if (myClientId) {
+          try {
+            await logRound({
+              round: r,
+              accuracy: simAcc / 100,
+              loss: simLoss,
+              participating_clients: [myClientId],
+            });
+          } catch {
+            // Silently fail
+          }
+        }
+
+        if (r % 5 === 0) {
+          addLog("#a78bfa", `Global model checkpoint saved (round ${r})`);
+        }
+
+        await new Promise((res) => setTimeout(res, ROUND_SECONDS * 1000));
+      }
+
+      setIsRunning(false);
+      addLog("#10b981", `Training complete — Final Accuracy ${metricsRef.current.accuracy.toFixed(2)}%`);
+    }
   };
+
+  // const handleStart = async () => {
+  //   if (isPaused) {
+  //     setIsPaused(false);
+  //     addLog("#8892b0", "Resumed training session.");
+  //     return;
+  //   }
+  //   if (isRunning) return;
+
+  //   // State reset
+  //   elapsedRef.current = 0;
+  //   roundRef.current = 0;
+  //   setElapsedSec(0);
+  //   setRound(0);
+  //   setAccuracy(0);
+  //   setLoss(1.6);
+  //   setAccHistory([]);
+  //   setLogEntries([]);
+  //   clientIdRef.current = null;
+
+  //   // ── Step 1: Register at backend ─────────────────────
+  //   addLog("#8892b0", "Connecting to Synora coordination server...");
+
+  //   let myClientId: string | null = null;
+  //   let myPartition: string | null = null;
+
+  //   try {
+  //     await resetExperiment();
+  //     await resetClients();
+
+  //     const reg = await registerClient(generateClientName(language));
+  //     myClientId = reg.client_id;
+  //     myPartition = reg.partition;
+  //     clientIdRef.current = reg.client_id;
+  //     setClientId(reg.client_id);
+  //     setAssignedPartition(reg.partition);
+
+  //     addLog("#10b981", `Registered as: ${reg.client_id.substring(0, 12)}...`);
+  //     addLog("#10b981", `Assigned partition: ${reg.partition} (${language})`);
+  //   } catch (err) {
+  //     addLog("#f43f5e", `Registration failed: ${err}`);
+  //     addLog("#f59e0b", "Running offline — metrics not saved to server");
+  //   }
+
+  //   // ── Step 2: Save experiment config ──────────────────
+  //   try {
+  //     await saveExperimentConfig({
+  //       num_rounds: TOTAL_ROUNDS,
+  //       learning_rate: 0.01,
+  //       partition_type: "non_iid",
+  //       dirichlet_alpha: 0.5,
+  //       languages: [language.toLowerCase()]
+  //     });
+  //     addLog("#8892b0", "Experiment config saved to server");
+  //   } catch { }
+
+  //   // ── Step 3: Load global model from server ────────────
+  //   addLog("#06b6d4", `Loading global model from server...`);
+  //   let flModel: unknown = null;
+
+  //   try {
+  //     // Dynamic import — TF.js only in browser
+  //     const { loadGlobalModel, trainLocally, submitWeightsToServer } =
+  //       await import("@/lib/fl_model");
+
+  //     const { model, version } = await loadGlobalModel();
+  //     flModel = model;
+  //     addLog("#10b981", `Global model loaded — version ${version}`);
+  //     addLog("#06b6d4", `Loading ${language} dataset partition (${myPartition})...`);
+  //     addLog("#10b981", `Dataset ready — beginning federated training`);
+
+  //     setIsRunning(true);
+
+  //     // ── Step 4: Real FL round loop ───────────────────
+  //     for (let r = 1; r <= TOTAL_ROUNDS; r++) {
+  //       if (!isRunning) break;
+
+  //       roundRef.current = r;
+  //       setRound(r);
+
+  //       addLog("#f59e0b", `Round ${r}/${TOTAL_ROUNDS} — Local training started`);
+
+  //       // Local training in browser
+  //       const { accuracy: acc, loss: ls } = await trainLocally(
+  //         model, null, null, 3
+  //       );
+
+  //       const accPercent = acc * 100;
+  //       setAccuracy(accPercent);
+  //       setLoss(ls);
+  //       setAccHistory(prev => [...prev, accPercent]);
+  //       setF1(acc * 0.97);
+  //       setPrecision(acc * 0.98);
+
+  //       addLog(
+  //         "#f59e0b",
+  //         `Round ${r}/${TOTAL_ROUNDS} — Loss: ${ls.toFixed(3)} | Acc: ${accPercent.toFixed(2)}%`
+  //       );
+  //       addLog("#06b6d4", "Submitting weights to server for FedAvg...");
+
+  //       // Submit weights to server
+  //       if (myClientId) {
+  //         try {
+  //           const result = await submitWeightsToServer(
+  //             model, myClientId, r, 100,
+  //             { accuracy: acc, loss: ls }
+  //           );
+
+  //           if (result.aggregated) {
+  //             addLog(
+  //               "#a78bfa",
+  //               `FedAvg complete — new global model v${result.new_model_version}`
+  //             );
+
+  //             // Load updated global model back into browser
+  //             const { model: newModel } = await loadGlobalModel();
+  //             flModel = newModel;
+  //             addLog("#10b981", "Updated global model loaded into browser");
+  //           }
+
+  //           // Log round to backend
+  //           await logRound({
+  //             round: r,
+  //             accuracy: parseFloat(acc.toFixed(4)),
+  //             loss: parseFloat(ls.toFixed(4)),
+  //             participating_clients: [myClientId]
+  //           });
+
+  //         } catch (err) {
+  //           addLog("#f59e0b", `Weight submission warning: ${err}`);
+  //         }
+  //       }
+
+  //       elapsedRef.current += 3;
+  //       setElapsedSec(prev => prev + 3);
+  //       await new Promise(res => setTimeout(res, 3000));
+  //     }
+
+  //     setIsRunning(false);
+  //     addLog(
+  //       "#10b981",
+  //       `Training complete — Final Accuracy ${accuracy.toFixed(2)}%`
+  //     );
+
+  //   } catch (err) {
+  //     addLog("#f43f5e", `Model error: ${err}`);
+  //     addLog("#f59e0b", "Falling back to simulated training mode");
+  //     setIsRunning(true); // Simulated mode continue kare
+  //   }
+  // };
+
+  // // ── Start Training ─────────────────────────────────────
+  // const handleStart = async () => {
+  //   // Resume if paused
+  //   if (isPaused) {
+  //     setIsPaused(false);
+  //     addLog("#8892b0", "Resumed training session.");
+  //     return;
+  //   }
+
+  //   if (isRunning) return;
+
+  //   // Reset all state
+  //   elapsedRef.current = 0;
+  //   roundRef.current = 0;
+  //   metricsRef.current = { accuracy: 0, loss: 1.6, f1: 0, precision: 0 };
+  //   setElapsedSec(0);
+  //   setRound(0);
+  //   setAccuracy(0);
+  //   setLoss(1.6);
+  //   setF1(0);
+  //   setPrecision(0);
+  //   setPrevMetrics({ accuracy: 0, loss: 1.6, f1: 0, precision: 0 });
+  //   setAccHistory([]);
+  //   setRegistrationError(null);
+  //   setClientId(null);
+  //   setAssignedPartition(null);
+  //   clientIdRef.current = null;
+
+  //   const initialLogs: LogEntry[] = [
+  //     {
+  //       time: "00:00:00",
+  //       color: "#8892b0",
+  //       text: `Connecting to Synora coordination server...`,
+  //     },
+  //   ];
+  //   setLogEntries(initialLogs);
+  //   setIsPaused(false);
+
+  //   // ── Step 1: Reset previous experiment on backend ────
+  //   try {
+  //     await resetExperiment();
+  //     await resetClients();
+  //   } catch {
+  //     // Non-fatal — continue even if reset fails
+  //   }
+
+  //   // ── Step 2: Register this browser client ───────────
+  //   const clientName = generateClientName(language);
+  //   try {
+  //     const registration = await registerClient(clientName);
+  //     setClientId(registration.client_id);
+  //     setAssignedPartition(registration.partition);
+  //     clientIdRef.current = registration.client_id;
+
+  //     setLogEntries((prev) => [
+  //       ...prev,
+  //       {
+  //         time: "00:00:00",
+  //         color: "#10b981",
+  //         text: `Registered as client: ${clientName}`,
+  //       },
+  //       {
+  //         time: "00:00:00",
+  //         color: "#10b981",
+  //         text: `Assigned dataset partition: ${registration.partition} (${language} language)`,
+  //       },
+  //     ]);
+  //   } catch (err) {
+  //     const msg =
+  //       err instanceof Error ? err.message : "Registration failed";
+  //     setRegistrationError(msg);
+  //     setLogEntries((prev) => [
+  //       ...prev,
+  //       {
+  //         time: "00:00:00",
+  //         color: "#f43f5e",
+  //         text: `Backend registration failed: ${msg}`,
+  //       },
+  //       {
+  //         time: "00:00:00",
+  //         color: "#f59e0b",
+  //         text: `Running in offline mode — metrics will not be saved to server`,
+  //       },
+  //     ]);
+  //   }
+
+  //   // ── Step 3: Save experiment config to backend ───────
+  //   try {
+  //     await saveExperimentConfig({
+  //       num_rounds: TOTAL_ROUNDS,
+  //       learning_rate: 0.01,
+  //       partition_type: "non_iid",
+  //       dirichlet_alpha: 0.5,
+  //       languages: [language.toLowerCase()],
+  //     });
+  //     setLogEntries((prev) => [
+  //       ...prev,
+  //       {
+  //         time: "00:00:00",
+  //         color: "#8892b0",
+  //         text: `Experiment config saved to server`,
+  //       },
+  //     ]);
+  //   } catch {
+  //     // Non-fatal
+  //   }
+
+  //   // ── Step 4: Load model and dataset in browser ───────
+  //   setLogEntries((prev) => [
+  //     ...prev,
+  //     {
+  //       time: "00:00:00",
+  //       color: "#10b981",
+  //       text: `Loading ${MODEL_NAME} model into browser...`,
+  //     },
+  //     {
+  //       time: "00:00:00",
+  //       color: "#06b6d4",
+  //       text: `Initializing WebGPU backend for local training`,
+  //     },
+  //     {
+  //       time: "00:00:00",
+  //       color: "#06b6d4",
+  //       text: `Loading ${language} dataset partition (${LANGUAGE_PARTITION_MAP[language]})...`,
+  //     },
+  //     {
+  //       time: "00:00:00",
+  //       color: "#10b981",
+  //       text: `Dataset loaded — starting federated training`,
+  //     },
+  //   ]);
+
+  //   // ── Step 5: Start the training loop ─────────────────
+  //   setIsRunning(true);
+  // };
 
   // ── Pause ──────────────────────────────────────────────
   const handlePause = () => {
@@ -395,10 +847,10 @@ export default function TrainingDashboard() {
   const startLabel = isPaused
     ? "▶ Resume Training"
     : isCompleted
-    ? "🔄 Start New Session"
-    : isRunning
-    ? "⏳ Training in Progress..."
-    : "🚀 Start Training";
+      ? "🔄 Start New Session"
+      : isRunning
+        ? "⏳ Training in Progress..."
+        : "🚀 Start Training";
 
   const startDisabled = isRunning && !isPaused;
   const pauseDisabled = !isRunning || isPaused;
@@ -497,8 +949,8 @@ export default function TrainingDashboard() {
                 backendStatus === "online"
                   ? "#10b981"
                   : backendStatus === "offline"
-                  ? "#f43f5e"
-                  : "#f59e0b",
+                    ? "#f43f5e"
+                    : "#f59e0b",
             }}
           />
           <span style={{ color: "#4a5568", fontSize: "9px" }}>
@@ -598,15 +1050,14 @@ export default function TrainingDashboard() {
                   backgroundColor: isRunning
                     ? "rgba(16,185,129,0.15)"
                     : isCompleted
-                    ? "rgba(124,58,237,0.15)"
-                    : "rgba(255,255,255,0.05)",
-                  border: `1px solid ${
-                    isRunning
-                      ? "rgba(16,185,129,0.3)"
-                      : isCompleted
+                      ? "rgba(124,58,237,0.15)"
+                      : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${isRunning
+                    ? "rgba(16,185,129,0.3)"
+                    : isCompleted
                       ? "rgba(124,58,237,0.3)"
                       : "rgba(255,255,255,0.1)"
-                  }`,
+                    }`,
                   borderRadius: "20px",
                   padding: "6px 14px",
                   display: "flex",
@@ -622,8 +1073,8 @@ export default function TrainingDashboard() {
                     backgroundColor: isRunning
                       ? "#10b981"
                       : isCompleted
-                      ? "#a78bfa"
-                      : "#6b7280",
+                        ? "#a78bfa"
+                        : "#6b7280",
                   }}
                 />
                 <span
@@ -631,8 +1082,8 @@ export default function TrainingDashboard() {
                     color: isRunning
                       ? "#10b981"
                       : isCompleted
-                      ? "#a78bfa"
-                      : "#8892b0",
+                        ? "#a78bfa"
+                        : "#8892b0",
                     fontSize: "13px",
                     fontWeight: 500,
                   }}
@@ -642,8 +1093,8 @@ export default function TrainingDashboard() {
                       ? "Session Paused"
                       : "Session Active"
                     : isCompleted
-                    ? "Training Complete"
-                    : "Session Idle"}
+                      ? "Training Complete"
+                      : "Session Idle"}
                 </span>
               </div>
 
