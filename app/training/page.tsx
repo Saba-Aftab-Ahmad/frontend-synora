@@ -339,8 +339,13 @@ export default function TrainingDashboard() {
       addLog("#06b6d4", `Loading ${language} dataset partition (${myPartition ?? "default"})...`);
       addLog("#10b981", "Dataset ready — beginning federated training");
 
-      // Mark as running
+      // Mark as running (set the ref synchronously too — the loop below
+      // checks isRunningRef.current on its very first iteration, before
+      // React gets a chance to run the effect that normally syncs it from
+      // the isRunning state, so relying on the state alone would make the
+      // loop break immediately on round 1).
       setIsRunning(true);
+      isRunningRef.current = true;
 
       // ── Step 5: Real FL Round Loop ────────────────────
       for (let r = 1; r <= TOTAL_ROUNDS; r++) {
@@ -467,8 +472,8 @@ export default function TrainingDashboard() {
     } catch (err) {
       // TF.js failed — fall back to simulated mode
       addLog("#f43f5e", `TF.js error: ${err}`);
-      addLog("#f59e0b", "Falling back to simulated training mode");
       setIsRunning(true);
+      isRunningRef.current = true;
 
       // Simulated fallback loop
       for (let r = 1; r <= TOTAL_ROUNDS; r++) {
