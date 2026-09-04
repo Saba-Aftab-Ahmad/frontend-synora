@@ -38,7 +38,7 @@ export function About() {
     <section 
       id="about" 
       className="relative py-24 md:py-32 bg-[#060810]/85 backdrop-blur-[2px]"
-      style={{ backgroundColor: '#060810' }}
+      /* style={{ backgroundColor: '#060810' }} */
     >
       {/* Background Effect */}
       <div className="absolute inset-0 overflow-hidden">
