@@ -10,7 +10,7 @@ export default function Home() {
   return (
     <div className="relative min-h-screen bg-[#060810]" style={{ backgroundColor: '#060810' }}>
       {/* Fixed animated globe — stays visible behind every section while scrolling */}
-      <div className="fixed inset-0 z-0 opacity-60 pointer-events-none">
+      <div className="fixed inset-0 z-0 opacity-80 pointer-events-none">
         <NeuralGlobeBackground />
       </div>
 

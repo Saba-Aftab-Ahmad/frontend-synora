@@ -35,10 +35,10 @@ const features = [
 
 export function About() {
   return (
-    <section 
-      id="about" 
-      className="relative py-24 md:py-32 bg-[#060810]/85 backdrop-blur-[2px]"
-      /* style={{ backgroundColor: '#060810' }} */
+    <section
+      id="about"
+      className="relative py-24 md:py-32 bg-[#060810]/40"
+    /* style={{ backgroundColor: '#060810' }} */
     >
       {/* Background Effect */}
       <div className="absolute inset-0 overflow-hidden">
@@ -49,7 +49,7 @@ export function About() {
         {/* Section Header */}
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold text-[#f0f4ff]">
-            Built for <span 
+            Built for <span
               style={{
                 background: 'linear-gradient(135deg, #7c3aed, #06b6d4)',
                 WebkitBackgroundClip: 'text',
@@ -64,7 +64,7 @@ export function About() {
         </div>
 
         {/* 6 Cards Grid - 3x2 layout */}
-        <div 
+        <div
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mb-16"
           style={{ display: 'grid', gap: '24px' }}
         >
@@ -80,7 +80,7 @@ export function About() {
                 padding: '32px'
               }}
             >
-              <div 
+              <div
                 className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-xl"
                 style={{ background: 'rgba(124, 58, 237, 0.15)' }}
               >
@@ -98,7 +98,7 @@ export function About() {
 
         {/* Mission Statement Quote */}
         <div className="text-center max-w-3xl mx-auto">
-          <blockquote 
+          <blockquote
             className="relative px-8 py-6 rounded-2xl"
             style={{
               background: 'rgba(255, 255, 255, 0.02)',

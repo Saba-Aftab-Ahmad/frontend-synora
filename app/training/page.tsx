@@ -8,6 +8,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { SiteNavbar } from "@/components/shared/site-navbar";
+import { NeuralGlobeBackground } from "@/components/landing/neural-globe-background";
 
 const TOTAL_ROUNDS = 20;
 const ROUND_SECONDS = 3; // simulated: one federated round "completes" every N seconds
@@ -98,19 +99,6 @@ export default function TrainingDashboard() {
           setIsRunning(false);
           setIsPaused(false);
         }
-
-        // Log round to backend
-        fetch(`${process.env.NEXT_PUBLIC_SERVER_URL || 'https://synora-coordination-server.onrender.com'}/experiment/log`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            round: r,
-            accuracy: newAcc / 100,
-            loss: newLoss,
-            participating_clients: [language.toLowerCase() + '_client']
-          })
-        }).catch(err => console.error('Failed to log round:', err));
-
       }
     }, 1000);
 
@@ -191,10 +179,10 @@ export default function TrainingDashboard() {
   const startLabel = isPaused
     ? "▶ Resume Training"
     : isCompleted
-      ? "🔄 Start New Session"
-      : isRunning
-        ? "⏳ Training in Progress..."
-        : "🚀 Start Training";
+    ? "🔄 Start New Session"
+    : isRunning
+    ? "⏳ Training in Progress..."
+    : "🚀 Start Training";
 
   const startDisabled = isRunning && !isPaused;
   const pauseDisabled = !isRunning || isPaused;
@@ -207,17 +195,25 @@ export default function TrainingDashboard() {
   ].map((item) => ({ ...item, active: pathname === item.href }));
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "row",
-        height: "100vh",
-        width: "100vw",
-        overflow: "hidden",
-        backgroundColor: "#060810",
-        fontFamily: "Inter, sans-serif",
-      }}
-    >
+    <>
+      {/* Fixed animated globe — same background used on the landing page */}
+      <div className="fixed inset-0 z-0 opacity-50 pointer-events-none">
+        <NeuralGlobeBackground />
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          height: "100vh",
+          width: "100vw",
+          overflow: "hidden",
+          backgroundColor: "transparent",
+          position: "relative",
+          zIndex: 1,
+          fontFamily: "Inter, sans-serif",
+        }}
+      >
       {/* SECTION 1 — LEFT SIDEBAR */}
       <div
         style={{
@@ -1087,8 +1083,8 @@ export default function TrainingDashboard() {
                       ? "Paused — click Resume to continue"
                       : "Training in progress…"
                     : isCompleted
-                      ? "Training session complete"
-                      : "Waiting to start…"}
+                    ? "Training session complete"
+                    : "Waiting to start…"}
                 </span>
               </div>
 
@@ -1150,5 +1146,6 @@ export default function TrainingDashboard() {
         `}
       </style>
     </div>
+    </>
   );
 }

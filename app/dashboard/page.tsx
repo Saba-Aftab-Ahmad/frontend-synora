@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Download, TrendingUp, Target, Layers, Users, ChevronsUpDown, Shield, Home, LayoutGrid, BarChart3 } from "lucide-react";
 import {
@@ -26,12 +25,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SiteNavbar } from "@/components/shared/site-navbar";
+import { NeuralGlobeBackground } from "@/components/landing/neural-globe-background";
 import {
   Tooltip as UITooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
 
 // SynoraLogo component with neural network design
 function SynoraLogo({ size = 32 }: { size?: number }) {
@@ -232,21 +231,13 @@ function SidebarButton({
 export default function ResultsPage() {
   const router = useRouter();
   const pathname = usePathname();
-
-  const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL || 'https://synora-coordination-server.onrender.com';
-
-  useEffect(() => {
-    fetch(`${SERVER_URL}/experiment/summary`)
-      .then(res => res.json())
-      .then(data => {
-        // use data.rounds to populate your charts
-        console.log(data);
-      })
-      .catch(err => console.error('Backend error:', err));
-  }, [SERVER_URL]);
-
   return (
-    <div className="min-h-screen bg-black relative overflow-hidden">
+    <div className="min-h-screen relative overflow-hidden" style={{ backgroundColor: "#050608" }}>
+      {/* Fixed animated globe — same background used on the landing page */}
+      <div className="fixed inset-0 z-0 opacity-50 pointer-events-none">
+        <NeuralGlobeBackground />
+      </div>
+
       {/* Background gradient glows */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-purple-500/[0.15] rounded-full blur-[120px]" />
@@ -314,7 +305,7 @@ export default function ResultsPage() {
           <div className="relative">
             {/* Floating glow behind metric cards */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
-
+            
             <div className="relative grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
               {/* Global Accuracy */}
               <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/10 hover:border-white/20 transition-colors rounded-2xl p-6 overflow-hidden">
@@ -535,8 +526,9 @@ export default function ResultsPage() {
                   {roundHistoryData.map((row, index) => (
                     <TableRow
                       key={row.round}
-                      className={`border-b border-white/5 hover:bg-purple-500/5 transition-colors ${index % 2 === 0 ? "bg-white/[0.02]" : "bg-transparent"
-                        }`}
+                      className={`border-b border-white/5 hover:bg-purple-500/5 transition-colors ${
+                        index % 2 === 0 ? "bg-white/[0.02]" : "bg-transparent"
+                      }`}
                     >
                       <TableCell className="py-4 px-6">
                         <span className="font-mono font-bold text-white">#{row.round}</span>

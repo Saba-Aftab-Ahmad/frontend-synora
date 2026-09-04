@@ -33,10 +33,10 @@ const technologies = [
 
 export function TechStack() {
   return (
-    <section 
-      id="powered-by" 
-      className="relative py-24 md:py-32 border-t border-border bg-[#060810]/85 backdrop-blur-[2px]"
-      /* style={{ backgroundColor: '#060810' }} */
+    <section
+      id="powered-by"
+      className="relative py-24 md:py-32 border-t border-border bg-[#060810]/40"
+    /* style={{ backgroundColor: '#060810' }} */
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
@@ -65,12 +65,12 @@ export function TechStack() {
               <div className={`mx-auto mb-3 h-12 w-12 rounded-lg bg-gradient-to-br ${tech.color} flex items-center justify-center text-white font-bold text-lg`}>
                 {tech.name.charAt(0)}
               </div>
-              
+
               {/* Name */}
               <h3 className="text-sm font-medium text-[#f0f4ff]">
                 {tech.name}
               </h3>
-              
+
               {/* Description */}
               <p className="mt-1 text-xs text-[#8892b0]">
                 {tech.description}

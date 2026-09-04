@@ -23,10 +23,10 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section 
-      id="how-it-works" 
-      className="relative py-24 md:py-32 bg-[#060810]/85 backdrop-blur-[2px]"
-      /* style={{ backgroundColor: '#060810' }} */
+    <section
+      id="how-it-works"
+      className="relative py-24 md:py-32 bg-[#060810]/40"
+    /*style={{ backgroundColor: '#060810' }} */
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
