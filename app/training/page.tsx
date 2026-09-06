@@ -16,7 +16,7 @@ import {
 // ── Constants ──────────────────────────────────────────────
 const TOTAL_ROUNDS = 20;
 const ROUND_SECONDS = 3;
-const MODEL_NAME = "DistilBERT-mini";
+const MODEL_NAME = "BiLSTM-Embedding (lightweight)";
 
 // Language → partition mapping matching your backend
 const LANGUAGE_PARTITION_MAP: Record<string, string> = {
@@ -1269,8 +1269,8 @@ export default function TrainingDashboard() {
                   }}
                 >
                   <option value="FedAvg">FedAvg</option>
-                  <option value="FedProx">FedProx</option>
-                  <option value="FedAdam">FedAdam</option>
+                  {/* <option value="FedProx">FedProx</option>
+                  <option value="FedAdam">FedAdam</option> */}
                 </select>
               </div>
 

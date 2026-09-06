@@ -1,10 +1,42 @@
 import { ShieldCheck, Globe, Zap, Languages, RefreshCw, FlaskConical } from "lucide-react"
 
+// const features = [
+//   {
+//     icon: ShieldCheck,
+//     title: "Privacy Preserving",
+//     description: "Differential privacy and gradient encryption protect all participants"
+//   },
+//   {
+//     icon: Globe,
+//     title: "Browser Native",
+//     description: "No installation required. Runs entirely in modern web browsers"
+//   },
+//   {
+//     icon: Zap,
+//     title: "WebGPU Accelerated",
+//     description: "Hardware-accelerated training using WebGPU and WebNN APIs"
+//   },
+//   {
+//     icon: Languages,
+//     title: "Low-Resource NLP",
+//     description: "Specialized for Swahili, Yoruba, Hausa, Amharic and more"
+//   },
+//   {
+//     icon: RefreshCw,
+//     title: "Federated Aggregation",
+//     description: "FedAvg and FedProx aggregation strategies built-in"
+//   },
+//   {
+//     icon: FlaskConical,
+//     title: "Research Platform",
+//     description: "Export results, compare rounds, analyze convergence metrics"
+//   }
+// ]
 const features = [
   {
     icon: ShieldCheck,
     title: "Privacy Preserving",
-    description: "Differential privacy and gradient encryption protect all participants"
+    description: "Raw text never leaves the browser, only validated model weight tensors are transmitted"
   },
   {
     icon: Globe,
@@ -13,18 +45,18 @@ const features = [
   },
   {
     icon: Zap,
-    title: "WebGPU Accelerated",
-    description: "Hardware-accelerated training using WebGPU and WebNN APIs"
+    title: "Hardware Accelerated",
+    description: "Automatic detection and use of WebGPU or WebNN, with CPU fallback"
   },
   {
     icon: Languages,
     title: "Low-Resource NLP",
-    description: "Specialized for Swahili, Yoruba, Hausa, Amharic and more"
+    description: "Specialized for Kenyan languages: Dholuo, Kalenjin, and Kidaw'ida"
   },
   {
     icon: RefreshCw,
     title: "Federated Aggregation",
-    description: "FedAvg and FedProx aggregation strategies built-in"
+    description: "FedAvg aggregation strategy on a custom coordination server"
   },
   {
     icon: FlaskConical,

@@ -1,3 +1,35 @@
+// const technologies = [
+//   {
+//     name: "TensorFlow.js",
+//     description: "ML in the browser",
+//     color: "from-orange-500 to-yellow-500",
+//   },
+//   {
+//     name: "WebGPU",
+//     description: "Native GPU access",
+//     color: "from-blue-500 to-indigo-500",
+//   },
+//   {
+//     name: "WebNN",
+//     description: "Neural network API",
+//     color: "from-green-500 to-emerald-500",
+//   },
+//   {
+//     name: "React",
+//     description: "UI framework",
+//     color: "from-cyan-400 to-blue-500",
+//   },
+//   {
+//     name: "Python",
+//     description: "Server backend",
+//     color: "from-yellow-400 to-blue-500",
+//   },
+//   {
+//     name: "Flower",
+//     description: "Federated learning",
+//     color: "from-pink-500 to-rose-500",
+//   },
+// ]
 const technologies = [
   {
     name: "TensorFlow.js",
@@ -21,12 +53,12 @@ const technologies = [
   },
   {
     name: "Python",
-    description: "Server backend",
+    description: "Flask coordination server",
     color: "from-yellow-400 to-blue-500",
   },
   {
-    name: "Flower",
-    description: "Federated learning",
+    name: "FedAvg",
+    description: "Federated aggregation",
     color: "from-pink-500 to-rose-500",
   },
 ]
