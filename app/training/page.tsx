@@ -262,9 +262,7 @@ export default function TrainingDashboard() {
       return;
     }
 
-    // if (isRunning) return;
-    if (isRunningRef.current) return;
-    isRunningRef.current = true;
+    if (isRunning) return;
 
     // ── Reset all local state ────────────────────────────
     elapsedRef.current = 0;
@@ -467,10 +465,6 @@ export default function TrainingDashboard() {
       }
 
       // Training complete
-      // setIsRunning(false);
-      // setIsPaused(false);
-      // Training complete
-      isRunningRef.current = false;
       setIsRunning(false);
       setIsPaused(false);
 
@@ -539,13 +533,8 @@ export default function TrainingDashboard() {
         await new Promise((res) => setTimeout(res, ROUND_SECONDS * 1000));
       }
 
-      //setIsRunning(false);
-
-      isRunningRef.current = false;
       setIsRunning(false);
       addLog("#10b981", `Training complete — Final Accuracy ${metricsRef.current.accuracy.toFixed(2)}%`);
-
-      //addLog("#10b981", `Training complete — Final Accuracy ${metricsRef.current.accuracy.toFixed(2)}%`);
     }
   };
 
@@ -843,15 +832,8 @@ export default function TrainingDashboard() {
   };
 
   // ── Stop ───────────────────────────────────────────────
-  // const handleStop = () => {
-  //   if (!isRunning && !isPaused && round === 0) return;
-  //   setIsRunning(false);
-  //   setIsPaused(false);
-  //   addLog("#f43f5e", "Session stopped by user.");
-  // };
   const handleStop = () => {
     if (!isRunning && !isPaused && round === 0) return;
-    isRunningRef.current = false;
     setIsRunning(false);
     setIsPaused(false);
     addLog("#f43f5e", "Session stopped by user.");
