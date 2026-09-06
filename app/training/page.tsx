@@ -1006,7 +1006,15 @@ export default function TrainingDashboard() {
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#060810", color: "#f0f4ff" }}>
-      <SiteNavbar />
+      <SiteNavbar
+  links={[
+    { href: "/", label: "Home" },
+    { href: "/training", label: "Live Demo" },
+    { href: "https://github.com/Saba-Aftab-Ahmad/SYNORA", label: "GitHub", external: true },
+  ]}
+  activeHref="/training"
+  breadcrumb="Training"
+/>
 
       {/* Zoom fix — 75% scale on large screens, full on mobile */}
       <div style={{
