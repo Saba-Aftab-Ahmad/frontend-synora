@@ -69,7 +69,8 @@ export function About() {
   return (
     <section
       id="about"
-      className="relative py-24 md:py-32 bg-[#060810]/40"
+      /*className="relative py-24 md:py-32 bg-[#060810]/40"*/
+      className="relative py-14 md:py-20 bg-[#060810]/40"
     /* style={{ backgroundColor: '#060810' }} */
     >
       {/* Background Effect */}
@@ -79,7 +80,7 @@ export function About() {
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-8">
           <h2 className="text-3xl sm:text-4xl font-bold text-[#f0f4ff]">
             Built for <span
               style={{
@@ -97,7 +98,7 @@ export function About() {
 
         {/* 6 Cards Grid - 3x2 layout */}
         <div
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mb-16"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mb-8"
           style={{ display: 'grid', gap: '24px' }}
         >
           {features.map((feature) => (
@@ -109,7 +110,7 @@ export function About() {
                 backdropFilter: 'blur(20px)',
                 border: '1px solid rgba(255, 255, 255, 0.08)',
                 borderRadius: '16px',
-                padding: '32px'
+                padding: '20px'
               }}
             >
               <div

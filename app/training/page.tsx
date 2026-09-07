@@ -1220,6 +1220,7 @@ export default function TrainingDashboard() {
   const clientIdRef = useRef<string | null>(null);
   const languageRef = useRef(language);
   const isRunningRef = useRef(false);
+  const isPausedRef = useRef(false);
 
   const isIdle = !isRunning && round === 0;
   const isCompleted = !isRunning && round >= TOTAL_ROUNDS && round > 0;
@@ -1294,6 +1295,7 @@ export default function TrainingDashboard() {
 
   useEffect(() => { languageRef.current = language; }, [language]);
   useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
+  useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
 
   // ── Auto-scroll log ────────────────────────────────────
   useEffect(() => {
@@ -1320,13 +1322,21 @@ export default function TrainingDashboard() {
   };
 
   // ── MAIN TRAINING HANDLER ──────────────────────────────
-  const handleStart = async () => {
-    if (isPaused) {
-      setIsPaused(false);
-      addLog("#8892b0", "Resumed training session.");
-      return;
-    }
-    if (isRunning) return;
+   const handleStart = async () => {
+  //   if (isPaused) {
+  //     setIsPaused(false);
+  //     addLog("#8892b0", "Resumed training session.");
+  //     return;
+  //   }
+  //   if (isRunning) return;
+       if (isPaused) {
+        isPausedRef.current = false;
+        setIsPaused(false);
+        addLog("#8892b0", "Resumed training session.");
+        return;
+      }
+      if (isRunningRef.current) return;
+      isRunningRef.current = true;
 
     // STEP 5 FIX: Clear old session on new start
     sessionStorage.removeItem(STORAGE_KEY);
@@ -1413,6 +1423,11 @@ export default function TrainingDashboard() {
       for (let r = 1; r <= TOTAL_ROUNDS; r++) {
         if (!isRunningRef.current) break;
 
+        while (isPausedRef.current) {
+          await new Promise((res) => setTimeout(res, 300));
+          if (!isRunningRef.current) break;
+        }
+        if (!isRunningRef.current) break;
         roundRef.current = r;
         setRound(r);
         elapsedRef.current = r * ROUND_SECONDS;
@@ -1489,6 +1504,12 @@ export default function TrainingDashboard() {
       for (let r = 1; r <= TOTAL_ROUNDS; r++) {
         if (!isRunningRef.current) break;
 
+        while (isPausedRef.current) {
+          await new Promise((res) => setTimeout(res, 300));
+          if (!isRunningRef.current) break;
+        }
+        if (!isRunningRef.current) break;
+
         roundRef.current = r;
         setRound(r);
         elapsedRef.current = r * ROUND_SECONDS;
@@ -1525,6 +1546,7 @@ export default function TrainingDashboard() {
 
   const handlePause = () => {
     if (!isRunning || isCompleted) return;
+    isPausedRef.current = !isPausedRef.current;
     setIsPaused((p) => !p);
     addLog("#f59e0b", isPaused ? "Resumed training session." : "Session paused by user.");
   };
@@ -1532,12 +1554,15 @@ export default function TrainingDashboard() {
   const handleStop = () => {
     if (!isRunning) return;
     isRunningRef.current = false;
+    isPausedRef.current = false; 
     setIsRunning(false);
     setIsPaused(false);
     addLog("#f43f5e", "Session stopped by user.");
   };
 
-  const startDisabled = (isRunning && !isPaused) || isCompleted;
+  /*const startDisabled = (isRunning && !isPaused) || isCompleted;*/
+  // SAHI:
+  const startDisabled = isRunning && !isPaused;
   const pauseDisabled = !isRunning || isCompleted;
   const stopDisabled = !isRunning;
 
