@@ -1812,7 +1812,7 @@ export default function TrainingDashboard() {
         </div>
 
         {/* Go to Results button */}
-        {isCompleted && (
+        {isCompleted && round > 0 && (
           <div style={{ textAlign: "center", marginTop: "20px" }}>
             <button onClick={() => router.push("/dashboard")} style={{
               background: "linear-gradient(135deg, #7c3aed, #06b6d4)",
