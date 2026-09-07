@@ -1158,6 +1158,7 @@ import {
   resetExperiment,
   resetClients,
   checkHealth,
+  logRound,
 } from "@/lib/api";
 
 // ── Constants ──────────────────────────────────────────────
@@ -1530,6 +1531,23 @@ export default function TrainingDashboard() {
         addLog("#f59e0b", `Round ${r}/${TOTAL_ROUNDS} — Loss: ${simLoss.toFixed(3)} | Acc: ${simAcc.toFixed(2)}%`);
         addLog("#06b6d4", `Aggregating client updates via ${aggregationMethod}`);
         addLog("#a78bfa", `FedAvg complete — global model v${r}`);
+
+        // This fallback path never calls submitWeightsToServer(), so the
+        // backend's own auto-logging (inside /submit-update) never fires.
+        // Without an explicit logRound() call here, the Results page would
+        // stay empty even though a full session ran to completion.
+        if (myClientId) {
+          try {
+            await logRound({
+              round: r,
+              accuracy: simAcc / 100,
+              loss: simLoss,
+              participating_clients: [myClientId],
+            });
+          } catch {
+            // Non-fatal — keep the session running even if logging fails
+          }
+        }
 
         if (r % 5 === 0) {
           addLog("#a78bfa", `Global model checkpoint saved (round ${r})`);

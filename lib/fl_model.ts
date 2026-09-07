@@ -331,6 +331,17 @@ interface SubmitResult {
     round: number;
 }
 
+// ── Fixed global label vocabulary ──────────────────────────
+//
+// This MUST be identical (same labels, same order) across every browser
+// client, because the model's output layer has a fixed number of units
+// (3) and FedAvg only makes sense if every client's "class 0" means the
+// same language. Each server partition is single-language by design
+// (non-IID), so we can't derive the class count from what's present
+// locally — that produced only 1-2 classes per partition and caused a
+// shape mismatch against the model's fixed 3-unit output layer.
+const GLOBAL_LABELS = ["Dholuo", "Kalenjin", "Kidawida"];
+
 // ── Create TF.js model ─────────────────────────────────────
 
 /**
@@ -603,24 +614,36 @@ async function getOrCreateDataset(
         );
     }
 
+    // const seqLength = 100;
+    // const vocabSize = 5000;
+
+    // // Find unique class labels
+    // const uniqueLabels =
+    //     Array.from(
+    //         new Set(
+    //             labels as string[]
+    //         )
+    //     );
+
+    // const numClasses = Math.max(
+    //     uniqueLabels.length,
+    //     2
+    // );
+
+    // console.log(
+    //     `[FL] ${language}: ${texts.length} samples, ${uniqueLabels.length} classes`
+    // );
     const seqLength = 100;
     const vocabSize = 5000;
 
-    // Find unique class labels
-    const uniqueLabels =
-        Array.from(
-            new Set(
-                labels as string[]
-            )
-        );
-
-    const numClasses = Math.max(
-        uniqueLabels.length,
-        2
-    );
+    // Always use the fixed global vocabulary (3 classes) — NOT the unique
+    // labels found in this partition, since each partition only contains
+    // one language and would otherwise produce a 1- or 2-wide one-hot
+    // vector that doesn't match the model's fixed 3-unit output layer.
+    const numClasses = GLOBAL_LABELS.length;
 
     console.log(
-        `[FL] ${language}: ${texts.length} samples, ${uniqueLabels.length} classes`
+        `[FL] ${language}: ${texts.length} samples, ${numClasses} global classes`
     );
 
     // Tokenize REAL text
@@ -635,13 +658,31 @@ async function getOrCreateDataset(
     );
 
     // Convert string labels into integer class indices
+    // const labelIndices = (
+    //     labels as string[]
+    // ).map((label) =>
+    //     uniqueLabels.indexOf(
+    //         label
+    //     )
+    // );
+        // Convert string labels into integer class indices using the fixed
+    // global vocabulary, so index 0/1/2 means the same language for
+    // every client (case-insensitive match, just in case of casing
+    // differences between backend and frontend).
     const labelIndices = (
         labels as string[]
-    ).map((label) =>
-        uniqueLabels.indexOf(
-            label
-        )
-    );
+    ).map((label) => {
+        const idx = GLOBAL_LABELS.findIndex(
+            (l) => l.toLowerCase() === label.toLowerCase()
+        );
+        if (idx === -1) {
+            console.warn(
+                `[FL] Unrecognized label "${label}" — defaulting to class 0 (${GLOBAL_LABELS[0]})`
+            );
+            return 0;
+        }
+        return idx;
+    });
 
     // Create input tensor
     const x = tf.tensor2d(
