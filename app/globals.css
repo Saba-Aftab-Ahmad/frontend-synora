@@ -139,3 +139,6 @@
      pointer-events: none;
    }
  }
+ section[id] {
+  scroll-margin-top: 80px;
+}
