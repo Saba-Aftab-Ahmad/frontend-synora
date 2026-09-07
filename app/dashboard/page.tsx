@@ -177,19 +177,19 @@ export default function ResultsPage() {
     ? JSON.parse(sessionStorage.getItem("synora_training_session") || "{}").language
     : null;
 
-  // const languageData = LANGUAGE_DATA.map((lang) => ({
-  //   ...lang,
-  //   accuracy: lang.language === trainedLanguage ? globalAccuracy : 0,
-  // }));
-      const languageData = LANGUAGE_DATA.map((lang, i) => ({
-        ...lang,
-        accuracy:
-          lang.language === trainedLanguage
-          ? globalAccuracy
-          : globalAccuracy > 0
-          ? parseFloat(Math.max(0, globalAccuracy - (i + 1) * 4).toFixed(1))
-          : 0,
-}));
+  const languageData = LANGUAGE_DATA.map((lang) => ({
+    ...lang,
+    accuracy: lang.language === trainedLanguage ? globalAccuracy : 0,
+  }));
+//       const languageData = LANGUAGE_DATA.map((lang, i) => ({
+//         ...lang,
+//         accuracy:
+//           lang.language === trainedLanguage
+//           ? globalAccuracy
+//           : globalAccuracy > 0
+//           ? parseFloat(Math.max(0, globalAccuracy - (i + 1) * 4).toFixed(1))
+//           : 0,
+// }));
 
   // Export handlers
   const handleExportJSON = async () => {

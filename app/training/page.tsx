@@ -1362,8 +1362,8 @@ export default function TrainingDashboard() {
     // Step 1: Reset backend
     addLog("#8892b0", "Connecting to Synora coordination server...");
     try {
-      // await resetExperiment();
-      // await resetClients();
+       await resetExperiment();
+       await resetClients();
       addLog("#8892b0", "Backend state cleared for new session");
     } catch {
       addLog("#f59e0b", "Could not reset backend — continuing anyway");
