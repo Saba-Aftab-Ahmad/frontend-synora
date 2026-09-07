@@ -1380,7 +1380,7 @@ export default function TrainingDashboard() {
       myClientId = reg.client_id;
       clientIdRef.current = reg.client_id;
       setClientId(reg.client_id);
-      setAssignedPartition(reg.partition);  // Use our mapping, not server response
+      setAssignedPartition(myPartition);  // Use our mapping, not server response
       addLog("#10b981", `Registered as: ${clientName}`);
       addLog("#10b981", `Client ID: ${reg.client_id.substring(0, 16)}...`);
       addLog("#10b981", `Assigned partition: ${myPartition} (${language} language)`);
