@@ -165,12 +165,21 @@ export default function ResultsPage() {
       : 0;
 
   // Build language accuracy from last round (approximated by partition)
-  const languageData = LANGUAGE_DATA.map((lang, i) => ({
+  // const languageData = LANGUAGE_DATA.map((lang, i) => ({
+  //   ...lang,
+  //   accuracy:
+  //     globalAccuracy > 0
+  //       ? parseFloat((globalAccuracy - i * 3 + Math.random() * 2).toFixed(1))
+  //       : 0,
+  // }));
+  const trainedLanguage =
+  typeof window !== "undefined"
+    ? JSON.parse(sessionStorage.getItem("synora_training_session") || "{}").language
+    : null;
+
+  const languageData = LANGUAGE_DATA.map((lang) => ({
     ...lang,
-    accuracy:
-      globalAccuracy > 0
-        ? parseFloat((globalAccuracy - i * 3 + Math.random() * 2).toFixed(1))
-        : 0,
+    accuracy: lang.language === trainedLanguage ? globalAccuracy : 0,
   }));
 
   // Export handlers
@@ -365,7 +374,7 @@ export default function ResultsPage() {
                 <div className="lg:col-span-2 bg-white/[0.03] backdrop-blur-xl border border-white/10 hover:border-white/20 transition-colors rounded-2xl p-6">
                   <div className="mb-6">
                     <h2 className="text-xl font-semibold text-white">Per-Language Performance</h2>
-                    <p className="text-sm text-slate-400 mt-1">Estimated accuracy by Kenyan language</p>
+                    <p className="text-sm text-slate-400 mt-1">Estimated accuracy by Trained language</p>
                   </div>
                   <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">

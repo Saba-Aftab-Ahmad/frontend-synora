@@ -1380,7 +1380,7 @@ export default function TrainingDashboard() {
       myClientId = reg.client_id;
       clientIdRef.current = reg.client_id;
       setClientId(reg.client_id);
-      setAssignedPartition(myPartition);  // Use our mapping, not server response
+      setAssignedPartition(reg.partition);  // Use our mapping, not server response
       addLog("#10b981", `Registered as: ${clientName}`);
       addLog("#10b981", `Client ID: ${reg.client_id.substring(0, 16)}...`);
       addLog("#10b981", `Assigned partition: ${myPartition} (${language} language)`);
@@ -1436,7 +1436,7 @@ export default function TrainingDashboard() {
         addLog("#f59e0b", `Round ${r}/${TOTAL_ROUNDS} — Local training started (${language})`);
 
         const { accuracy: localAcc, loss: localLoss } =
-          await flLib.trainLocally(currentModel, language, 3);
+          await flLib.trainLocally(currentModel, language, myPartition, 3);
 
         const accPercent = parseFloat((localAcc * 100).toFixed(2));
         const f1Val = parseFloat((localAcc * 0.97).toFixed(3));

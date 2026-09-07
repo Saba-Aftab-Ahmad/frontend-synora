@@ -169,6 +169,12 @@ const BACKEND_URL =
 
 // ── Types ──────────────────────────────────────────────────
 
+// export interface RegisterResponse {
+//   message: string;
+//   client_id: string;
+//   partition: string;
+//   status: string;
+// }
 export interface RegisterResponse {
   message: string;
   client_id: string;
@@ -231,13 +237,26 @@ async function apiFetch<T>(
  * mapping is respected (Dholuo→luo_swa, Kalenjin→kln_swa,
  * Kidawida→dav_swa) instead of backend round-robin.
  */
+// export async function registerClient(
+//   clientName: string,
+//   partition: string        // ← added
+// ): Promise<RegisterResponse> {
+//   return apiFetch<RegisterResponse>("/register", {
+//     method: "POST",
+//     body: JSON.stringify({ client_name: clientName, partition }),
+//   });
+// }
+
 export async function registerClient(
   clientName: string,
-  partition: string        // ← added
+  partition: string
 ): Promise<RegisterResponse> {
   return apiFetch<RegisterResponse>("/register", {
     method: "POST",
-    body: JSON.stringify({ client_name: clientName, partition }),
+    body: JSON.stringify({
+      client_name: clientName,
+      partition: partition,
+    }),
   });
 }
 
