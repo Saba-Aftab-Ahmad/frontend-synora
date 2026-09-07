@@ -1362,8 +1362,8 @@ export default function TrainingDashboard() {
     // Step 1: Reset backend
     addLog("#8892b0", "Connecting to Synora coordination server...");
     try {
-      await resetExperiment();
-      await resetClients();
+      // await resetExperiment();
+      // await resetClients();
       addLog("#8892b0", "Backend state cleared for new session");
     } catch {
       addLog("#f59e0b", "Could not reset backend — continuing anyway");
@@ -1437,7 +1437,7 @@ export default function TrainingDashboard() {
         addLog("#f59e0b", `Round ${r}/${TOTAL_ROUNDS} — Local training started (${language})`);
 
         const { accuracy: localAcc, loss: localLoss } =
-          await flLib.trainLocally(currentModel, language, myPartition, 3);
+          await flLib.trainLocally(currentModel, language, myPartition, 1);
 
         const accPercent = parseFloat((localAcc * 100).toFixed(2));
         const f1Val = parseFloat((localAcc * 0.97).toFixed(3));

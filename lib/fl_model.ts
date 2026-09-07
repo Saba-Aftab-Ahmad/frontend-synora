@@ -560,13 +560,13 @@ async function getOrCreateDataset(
         `${language}:${partition}`;
 
     // Reuse already downloaded dataset
-    if (datasetCache[cacheKey]) {
-        console.log(
-            `[FL] Using cached dataset for ${language} (${partition})`
-        );
+    // if (datasetCache[cacheKey]) {
+    //     console.log(
+    //         `[FL] Using cached dataset for ${language} (${partition})`
+    //     );
 
-        return datasetCache[cacheKey];
-    }
+    //     return datasetCache[cacheKey];
+    // }
 
     console.log(
         `[FL] Fetching real dataset for ${language} from partition ${partition}...`
@@ -735,7 +735,7 @@ export async function trainLocally(
     model: any,
     language: string,
     partition: string,
-    epochs = 3
+    epochs = 1
 ): Promise<TrainingResult> {
     const tf = await import(
         "@tensorflow/tfjs"
@@ -777,20 +777,29 @@ export async function trainLocally(
         const epochHistory =
             history.history;
 
-        finalAccuracy =
-            (epochHistory[
-                "acc"
-            ]?.[epochs - 1] as number) ||
-            (epochHistory[
-                "accuracy"
-            ]?.[epochs - 1] as number) ||
-            0;
+        // finalAccuracy =
+        //     (epochHistory[ "acc"]?.[epochs - 1] as number) ||
+        //     (epochHistory[  "accuracy"]?.[epochs - 1] as number) ||
+        //     0;
 
-        finalLoss =
-            (epochHistory[
-                "loss"
-            ]?.[epochs - 1] as number) ||
-            0;
+        // finalLoss =
+        //     (epochHistory[
+        //         "loss"
+        //     ]?.[epochs - 1] as number) ||
+        //     0;
+        // Use val_accuracy to show realistic generalisation
+// Training accuracy is always inflated due to overfitting
+           finalAccuracy =
+                (epochHistory["val_acc"]?.[epochs - 1] as number) ||
+                (epochHistory["val_accuracy"]?.[epochs - 1] as number) ||
+                (epochHistory["acc"]?.[epochs - 1] as number) ||
+                (epochHistory["accuracy"]?.[epochs - 1] as number) ||
+                0;
+
+            finalLoss =
+                (epochHistory["val_loss"]?.[epochs - 1] as number) ||
+                (epochHistory["loss"]?.[epochs - 1] as number) ||
+                0;  
 
         console.log(
             `[FL] Local training complete — accuracy: ${finalAccuracy.toFixed(
