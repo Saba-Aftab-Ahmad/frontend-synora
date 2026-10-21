@@ -5,6 +5,8 @@ import { useState, type ReactNode } from "react"
 import { Menu, X } from "lucide-react"
 import { SynoraLogo } from "@/components/landing/synora-logo"
 
+const RESULTS_LINK: SiteNavLink = { href: "/dashboard", label: "Results" }
+
 export type SiteNavLink = {
   href: string
   label: string
@@ -36,6 +38,12 @@ export function SiteNavbar({
   position?: "fixed" | "static"
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  // The Results link is part of the shared navbar itself, so it can never go
+  // missing on any page (landing, training, results) or on any screen size.
+  const allLinks: SiteNavLink[] = links.some((l) => l.href === RESULTS_LINK.href)
+    ? links
+    : [...links.filter((l) => !l.external), RESULTS_LINK, ...links.filter((l) => l.external)]
 
   return (
     <nav
@@ -77,7 +85,7 @@ export function SiteNavbar({
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-8 flex-1 justify-end">
             <div className="flex items-center gap-8">
-              {links.map((link) => (
+              {allLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
@@ -96,6 +104,18 @@ export function SiteNavbar({
             {rightSlot && <div className="flex items-center gap-3">{rightSlot}</div>}
           </div>
 
+          {/* Mobile: Results stays visible in the bar itself (never hidden in the hamburger) */}
+          <Link
+            href={RESULTS_LINK.href}
+            className={`md:hidden ml-auto mr-1 rounded-lg border px-3 py-1.5 text-sm font-medium ${
+              activeHref === RESULTS_LINK.href
+                ? "border-purple-400/60 bg-purple-500/20 text-[#f0f4ff]"
+                : "border-white/15 bg-white/5 text-[#cbd5e1] hover:text-[#f0f4ff]"
+            }`}
+          >
+            Results
+          </Link>
+
           {/* Mobile Menu Button */}
           <button
             className="md:hidden p-2 text-[#8892b0] hover:text-[#f0f4ff]"
@@ -110,7 +130,7 @@ export function SiteNavbar({
         {mobileMenuOpen && (
           <div className="md:hidden py-4 border-t border-white/10">
             <div className="flex flex-col gap-4">
-              {links.map((link) => (
+              {allLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}

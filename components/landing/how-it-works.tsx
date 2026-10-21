@@ -17,7 +17,7 @@ const steps = [
     step: 3,
     icon: Upload,
     title: "Share Updates",
-    description: "Only model gradients are sent back to the server. Raw data remains private and secure on your machine.",
+    description: "Only model weight updates are sent back to the server. Raw data remains private and secure on your machine.",
   },
 ]
 

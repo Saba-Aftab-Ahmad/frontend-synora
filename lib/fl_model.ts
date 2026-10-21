@@ -1,650 +1,217 @@
-import type * as tf from "@tensorflow/tfjs";
-
-const BACKEND_URL =
-    process.env.NEXT_PUBLIC_BACKEND_URL ||
-    "https://synora-coordination-server.onrender.com";
-
-// ── Type definitions ───────────────────────────────────────
-
-interface GlobalModelResponse {
-    version: number;
-    round: number;
-    weights: { shape: number[]; data: number[] }[] | null;
-    architecture?: {
-        vocab_size: number;
-        embedding_dim: number;
-        num_classes: number;
-        max_length: number;
-    };
-}
-
-interface TrainingResult {
-    accuracy: number;
-    loss: number;
-}
-
-interface SubmitResult {
-    message: string;
-    updates_received: number;
-    threshold: number;
-    threshold_met: boolean;
-    aggregated: boolean;
-    new_model_version?: number;
-    round: number;
-}
-
-// ── Fixed global label vocabulary ──────────────────────────
-//
-// This MUST be identical (same labels, same order) across every browser
-// client, because the model's output layer has a fixed number of units
-// (3) and FedAvg only makes sense if every client's "class 0" means the
-// same language. Each server partition is single-language by design
-// (non-IID), so we can't derive the class count from what's present
-// locally — that produced only 1-2 classes per partition and caused a
-// shape mismatch against the model's fixed 3-unit output layer.
-const GLOBAL_LABELS = ["Dholuo", "Kalenjin", "Kidawida"];
-
-// ── Create TF.js model ─────────────────────────────────────
-
 /**
- * Create lightweight text classification model.
- * Architecture matches the server-side model definition.
- * US-04
- */
-export async function createModel(
-    vocabSize = 5000,
-    numClasses = 3
-) {
-    const tf = await import("@tensorflow/tfjs");
-
-    const model = tf.sequential({
-        layers: [
-            tf.layers.embedding({
-                inputDim: vocabSize,
-                outputDim: 32,
-                inputLength: 100,
-                name: "embedding",
-            }),
-            tf.layers.globalAveragePooling1d({
-                name: "pooling",
-            }),
-            tf.layers.dense({
-                units: 16,
-                activation: "relu",
-                name: "dense_1",
-            }),
-            tf.layers.dropout({
-                rate: 0.3,
-                name: "dropout",
-            }),
-            tf.layers.dense({
-                units: numClasses,
-                activation: "softmax",
-                name: "output",
-            }),
-        ],
-    });
-
-    model.compile({
-        optimizer: tf.train.adam(0.01),
-        loss: "categoricalCrossentropy",
-        metrics: ["accuracy"],
-    });
-
-    return model;
-}
-
-// ── US-09: Load global model from server ───────────────────
-
-/**
- * Fetch global model weights from Flask server and
- * load them into a TF.js model in the browser.
- */
-export async function loadGlobalModel(): Promise<{
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    model: any;
-    version: number;
-}> {
-    const tf = await import("@tensorflow/tfjs");
-
-    const response = await fetch(
-        `${BACKEND_URL}/global-model`,
-        {
-            headers: {
-                "Content-Type": "application/json",
-            },
-        }
-    );
-
-    if (!response.ok) {
-        throw new Error(
-            `Failed to fetch global model: ${response.status}`
-        );
-    }
-
-    const serverData: GlobalModelResponse =
-        await response.json();
-
-    const model = await createModel();
-
-    // Apply server weights if they exist
-    if (
-        serverData.weights &&
-        serverData.weights.length > 0
-    ) {
-        try {
-            const tensors =
-                serverData.weights.map((layer) =>
-                    tf.tensor(
-                        layer.data,
-                        layer.shape
-                    )
-                );
-
-            model.setWeights(tensors);
-
-            tensors.forEach((t) =>
-                t.dispose()
-            );
-
-            console.log(
-                `[FL] Global model loaded — version ${serverData.version}, round ${serverData.round}`
-            );
-        } catch (err) {
-            console.warn(
-                "[FL] Could not apply server weights, using random init:",
-                err
-            );
-        }
-    } else {
-        console.log(
-            "[FL] No server weights available — using random initialization"
-        );
-    }
-
-    return {
-        model,
-        version: serverData.version || 0,
-    };
-}
-
-// ── Simple hash-based tokenizer ────────────────────────────
-
-/**
- * Convert a word/token into a stable integer ID.
+ * lib/fl_model.ts
+ * Local Training Module (SDS 3.1.1.3) - on-device training with TF.js.
  *
- * 0 is reserved for padding.
- * Remaining vocabulary IDs are generated using a
- * deterministic hash function.
+ * MODEL (identical to server/model_spec.py - the lightweight model of the SRS,
+ * NFR-A03: <= 5 MB):
+ *
+ *     Embedding(5000 x 32) -> GlobalAveragePooling1D -> Dense(16, relu)
+ *         -> Dropout(0.3) -> Dense(3, softmax)          160,579 parameters = 0.64 MB
+ *
+ * WHAT CHANGED vs v1 and WHY (this is the training-speed fix):
+ *  1. v1 trained through tf.layers.embedding().  TF.js back-propagates an
+ *     embedding lookup through a one-hot matrix of [batch x length x 5000]
+ *     numbers (12.8 M per step for batch 64) - extremely slow on CPU and
+ *     memory-hungry on the GPU.
+ *     "Embedding -> average pooling" is mathematically the SAME as
+ *         mean_embedding = (word_count_vector / L)  @  EmbeddingMatrix
+ *     (an "embedding bag").  We build the sparse word-count matrix in plain
+ *     JavaScript (2 560 increments per batch) and use ONE small matmul
+ *     [64 x 5000]@[5000 x 32].  Same weights, same outputs (verified against
+ *     the server's numpy mirror, see tests), ~40-100x cheaper per step.
+ *  2. The model object / variables are created once and re-used every round;
+ *     global weights are loaded with assign() (v1 re-built a RANDOM model each
+ *     round and silently fell back to it when parsing failed).
+ *  3. Batch 64 (v1: 16) and sequence length 40 (v1: 100).  Still exactly 2000
+ *     samples per client.
+ *  4. Every tensor is disposed; a fresh Adam optimizer is used per round;
+ *     the UI thread is released after every batch (tf.nextFrame).
+ *  5. Hard local-training timeout (SDS: 120 s).
  */
-function hashToken(
-    token: string,
-    vocabSize: number
-): number {
-    let hash = 0;
+import type { Architecture, ShardResponse } from "./api";
+import { getTf } from "./backend_detector";
+import { b64ToF32, b64ToU16, f32ToB64, type WireTensor } from "./weight_codec";
 
-    for (let i = 0; i < token.length; i++) {
-        hash =
-            (hash * 31 +
-                token.charCodeAt(i)) >>>
-            0;
-    }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TF = any;
 
-    return (
-        (hash % (vocabSize - 1)) + 1
-    );
-}
-
-/**
- * Convert text into a fixed-length sequence
- * of token IDs.
- */
-function tokenizeText(
-    text: string,
-    seqLength: number,
-    vocabSize: number
-): number[] {
-    const tokens = text
-        .toLowerCase()
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean);
-
-    const ids = tokens
-        .slice(0, seqLength)
-        .map((token) =>
-            hashToken(
-                token,
-                vocabSize
-            )
-        );
-
-    // Pad remaining positions with 0
-    while (ids.length < seqLength) {
-        ids.push(0);
-    }
-
-    return ids;
-}
-
-// ── Fetch + cache REAL partitioned dataset ─────────────────
-
-type CachedDataset = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    x: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    y: any;
+export type TrainResult = {
+  accuracy: number;
+  loss: number;
+  seconds: number;
+  epochs: number;
+  timedOut: boolean;
+  stopped: boolean;
 };
 
-const datasetCache: Record<
-    string,
-    CachedDataset
-> = {};
+export class LocalTrainer {
+  private tf!: TF;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private vars: any[] = [];
+  private ids: Int32Array | null = null; // [N * L] token ids of this client's shard
+  private labels: Int32Array | null = null;
+  private stopFlag = false;
+  version = -1;
+  numSamples = 0;
 
-/**
- * Fetch the actual dataset partition from the backend,
- * tokenize the text, convert labels to one-hot tensors,
- * and cache the result for subsequent rounds.
- *
- * @param tf        TensorFlow.js module
- * @param language  Language being trained
- * @param partition Backend dataset partition
- */
-async function getOrCreateDataset(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tf: any,
-    language: string,
-    partition: string
-): Promise<CachedDataset> {
-    // Use language + partition as cache key
-    // so switching languages never uses the wrong dataset.
-    const cacheKey =
-        `${language}:${partition}`;
+  constructor(private arch: Architecture) {}
 
-    // Reuse already downloaded dataset
-    // if (datasetCache[cacheKey]) {
-    //     console.log(
-    //         `[FL] Using cached dataset for ${language} (${partition})`
-    //     );
+  async init() {
+    const tf = (this.tf = await getTf());
+    // Variables in the SAME order as the server's LAYER_SPECS / TF.js getWeights():
+    // embedding, dense_1 kernel, dense_1 bias, output kernel, output bias
+    this.vars = this.arch.layers.map((l) => tf.variable(tf.zeros(l.shape), true, l.layer_name));
+  }
 
-    //     return datasetCache[cacheKey];
-    // }
+  get parameterCount(): number {
+    return this.arch.layers.reduce((n, l) => n + l.shape.reduce((a, b) => a * b, 1), 0);
+  }
 
-    console.log(
-        `[FL] Fetching real dataset for ${language} from partition ${partition}...`
-    );
+  /** Cache this client's 2000-sample shard (once per session). */
+  loadShard(shard: ShardResponse) {
+    const flat = b64ToU16(shard.x_b64);
+    if (flat.length !== shard.num_samples * shard.seq_len) throw new Error("Corrupt dataset shard received");
+    this.ids = Int32Array.from(flat);
+    this.labels = Int32Array.from(shard.labels);
+    this.numSamples = shard.num_samples;
+  }
 
-    const response = await fetch(
-        `${BACKEND_URL}/dataset/partition/${partition}`
-    );
-
-    if (!response.ok) {
-        throw new Error(
-            `Failed to fetch real dataset for ${language}: ${response.status}`
-        );
-    }
-
-    const {
-        texts,
-        labels,
-    } = await response.json();
-
-    if (
-        !texts ||
-        texts.length === 0
-    ) {
-        throw new Error(
-            `Dataset for ${language} came back empty`
-        );
-    }
-
-    if (
-        !labels ||
-        labels.length === 0
-    ) {
-        throw new Error(
-            `Labels for ${language} came back empty`
-        );
-    }
-
-    if (
-        texts.length !==
-        labels.length
-    ) {
-        throw new Error(
-            `Dataset mismatch for ${language}: ${texts.length} texts but ${labels.length} labels`
-        );
-    }
-
-    // const seqLength = 100;
-    // const vocabSize = 5000;
-
-    // // Find unique class labels
-    // const uniqueLabels =
-    //     Array.from(
-    //         new Set(
-    //             labels as string[]
-    //         )
-    //     );
-
-    // const numClasses = Math.max(
-    //     uniqueLabels.length,
-    //     2
-    // );
-
-    // console.log(
-    //     `[FL] ${language}: ${texts.length} samples, ${uniqueLabels.length} classes`
-    // );
-    const seqLength = 100;
-    const vocabSize = 5000;
-
-    // Always use the fixed global vocabulary (3 classes) — NOT the unique
-    // labels found in this partition, since each partition only contains
-    // one language and would otherwise produce a 1- or 2-wide one-hot
-    // vector that doesn't match the model's fixed 3-unit output layer.
-    const numClasses = GLOBAL_LABELS.length;
-
-    console.log(
-        `[FL] ${language}: ${texts.length} samples, ${numClasses} global classes`
-    );
-
-    // Tokenize REAL text
-    const tokenized = (
-        texts as string[]
-    ).map((text) =>
-        tokenizeText(
-            text,
-            seqLength,
-            vocabSize
-        )
-    );
-
-    // Convert string labels into integer class indices
-    // const labelIndices = (
-    //     labels as string[]
-    // ).map((label) =>
-    //     uniqueLabels.indexOf(
-    //         label
-    //     )
-    // );
-        // Convert string labels into integer class indices using the fixed
-    // global vocabulary, so index 0/1/2 means the same language for
-    // every client (case-insensitive match, just in case of casing
-    // differences between backend and frontend).
-    const labelIndices = (
-        labels as string[]
-    ).map((label) => {
-        const idx = GLOBAL_LABELS.findIndex(
-            (l) => l.toLowerCase() === label.toLowerCase()
-        );
-        if (idx === -1) {
-            console.warn(
-                `[FL] Unrecognized label "${label}" — defaulting to class 0 (${GLOBAL_LABELS[0]})`
-            );
-            return 0;
-        }
-        return idx;
+  /** Load the server's global weights into the existing variables (in place). */
+  setGlobalWeights(wire: WireTensor[], version: number) {
+    const tf = this.tf;
+    if (wire.length !== this.arch.layers.length) throw new Error("Global model has an unexpected number of tensors");
+    wire.forEach((t, i) => {
+      if (JSON.stringify(t.shape) !== JSON.stringify(this.arch.layers[i].shape)) throw new Error(`Tensor ${i} shape mismatch`);
+      const data = b64ToF32(t.data_b64);
+      if (!data.every(Number.isFinite)) throw new Error(`Tensor ${i} contains NaN/Infinity`);
+      const tensor = tf.tensor(data, t.shape, "float32");
+      this.vars[i].assign(tensor);
+      tensor.dispose();
     });
+    this.version = version;
+  }
 
-    // Create input tensor
-    const x = tf.tensor2d(
-        tokenized,
-        [
-            tokenized.length,
-            seqLength,
-        ],
-        "int32"
-    );
+  /** Word-count matrix [n x V], each row sums to 1 (= count / L).  Plain JS, very cheap. */
+  private countMatrix(idx: ArrayLike<number>, start: number, n: number): Float32Array {
+    const V = this.arch.vocab_size;
+    const L = this.arch.max_length;
+    const out = new Float32Array(n * V);
+    const w = 1 / L;
+    const ids = this.ids!;
+    for (let i = 0; i < n; i++) {
+      const base = idx[start + i] * L;
+      for (let j = 0; j < L; j++) out[i * V + ids[base + j]] += w;
+    }
+    return out;
+  }
 
-    // Create one-hot encoded labels
-    const y = tf.tidy(() =>
-        tf
-            .oneHot(
-                tf.tensor1d(
-                    labelIndices,
-                    "int32"
-                ),
-                numClasses
-            )
-            .toFloat()
-    );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private forward(counts: any, training: boolean): any {
+    const tf = this.tf;
+    const [E, W1, b1, W2, b2] = this.vars;
+    let h = counts.matMul(E); // embedding + average pooling
+    h = tf.relu(h.matMul(W1).add(b1)); // Dense(16, relu)
+    if (training) h = tf.dropout(h, this.arch.dropout_rate); // Dropout(0.3)
+    return tf.softmax(h.matMul(W2).add(b2)); // Dense(3, softmax)
+  }
 
-    datasetCache[cacheKey] = {
-        x,
-        y,
-    };
+  /** Class probabilities for the given rows of the shard (used by tests / local evaluation). */
+  predictProbs(rows: number[]): Float32Array {
+    const tf = this.tf;
+    return tf.tidy(() => {
+      const counts = tf.tensor2d(this.countMatrix(rows, 0, rows.length), [rows.length, this.arch.vocab_size]);
+      return this.forward(counts, false).dataSync();
+    }) as Float32Array;
+  }
 
-    console.log(
-        `[FL] Real dataset loaded and cached for ${language} (${partition})`
-    );
-
-    return datasetCache[cacheKey];
-}
-
-// ── US-05: Local browser training ──────────────────────────
-
-/**
- * Train the model locally in the browser on the REAL
- * dataset partition assigned to this client.
- *
- * @param model      TF.js model to train
- * @param language   Language being trained
- * @param partition  Dataset partition assigned by server
- * @param epochs     Number of local epochs per round
- */
-export async function trainLocally(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    model: any,
-    language: string,
-    partition: string,
-    epochs = 1
-): Promise<TrainingResult> {
-    const tf = await import(
-        "@tensorflow/tfjs"
-    );
-
-    // Fetch real dataset and wait for it
-    // to finish loading.
-    const {
-        x: xData,
-        y: yData,
-    } =
-        await getOrCreateDataset(
-            tf,
-            language,
-            partition
-        );
-
-    let finalAccuracy = 0;
-    let finalLoss = 0;
+  /** Local training with a wall-clock timeout (SDS: 120 s). */
+  async train(opts: {
+    epochs: number;
+    batchSize: number;
+    learningRate: number;
+    timeoutMs: number;
+    onEpoch?: (epoch: number, acc: number, loss: number) => void;
+  }): Promise<TrainResult> {
+    const tf = this.tf;
+    if (!this.ids || !this.labels) throw new Error("Dataset shard not loaded");
+    this.stopFlag = false;
+    const optimizer = tf.train.adam(opts.learningRate); // fresh optimizer state every round
+    const N = this.numSamples;
+    const V = this.arch.vocab_size;
+    const C = this.arch.num_classes;
+    const t0 = performance.now();
+    let timedOut = false;
+    let lastAcc = 0;
+    let lastLoss = 0;
+    let doneEpochs = 0;
+    let lastYield = performance.now();
 
     try {
-        console.log(
-            `[FL] Starting local training — ${language} / ${partition} / ${epochs} epochs`
-        );
-
-        const history =
-            await model.fit(
-                xData,
-                yData,
-                {
-                    epochs,
-                    batchSize: 16,
-                    validationSplit: 0.1,
-                    verbose: 0,
-                    shuffle: true,
-                }
-            );
-
-        const epochHistory =
-            history.history;
-
-        // finalAccuracy =
-        //     (epochHistory[ "acc"]?.[epochs - 1] as number) ||
-        //     (epochHistory[  "accuracy"]?.[epochs - 1] as number) ||
-        //     0;
-
-        // finalLoss =
-        //     (epochHistory[
-        //         "loss"
-        //     ]?.[epochs - 1] as number) ||
-        //     0;
-        // Use val_accuracy to show realistic generalisation
-// Training accuracy is always inflated due to overfitting
-           finalAccuracy =
-                (epochHistory["val_acc"]?.[epochs - 1] as number) ||
-                (epochHistory["val_accuracy"]?.[epochs - 1] as number) ||
-                (epochHistory["acc"]?.[epochs - 1] as number) ||
-                (epochHistory["accuracy"]?.[epochs - 1] as number) ||
-                0;
-
-            finalLoss =
-                (epochHistory["val_loss"]?.[epochs - 1] as number) ||
-                (epochHistory["loss"]?.[epochs - 1] as number) ||
-                0;  
-
-        console.log(
-            `[FL] Local training complete — accuracy: ${finalAccuracy.toFixed(
-                4
-            )}, loss: ${finalLoss.toFixed(4)}`
-        );
+      for (let epoch = 0; epoch < opts.epochs && !timedOut && !this.stopFlag; epoch++) {
+        const order = Int32Array.from({ length: N }, (_, i) => i);
+        for (let i = N - 1; i > 0; i--) { // Fisher-Yates shuffle
+          const j = Math.floor(Math.random() * (i + 1));
+          const tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+        }
+        let lossSum = 0, correct = 0, seen = 0;
+        for (let start = 0; start < N; start += opts.batchSize) {
+          if (this.stopFlag) break;
+          if (performance.now() - t0 > opts.timeoutMs) { timedOut = true; break; }
+          const n = Math.min(opts.batchSize, N - start);
+          const counts = tf.tensor2d(this.countMatrix(order, start, n), [n, V]);
+          const yOne = new Float32Array(n * C);
+          const yIdx = new Int32Array(n);
+          for (let i = 0; i < n; i++) { const lab = this.labels[order[start + i]]; yOne[i * C + lab] = 1; yIdx[i] = lab; }
+          const y = tf.tensor2d(yOne, [n, C]);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let probs: any = null;
+          const cost = optimizer.minimize(() => {
+            const p = this.forward(counts, true);
+            probs = tf.keep(tf.clone(p));
+            return tf.neg(tf.mean(tf.sum(y.mul(tf.log(p.add(1e-7))), 1)));
+          }, true, this.vars);
+          const lossVal = (await cost.data())[0];
+          const pred = tf.tidy(() => probs.argMax(1).dataSync()) as Int32Array;
+          for (let i = 0; i < n; i++) if (pred[i] === yIdx[i]) correct++;
+          lossSum += lossVal * n; seen += n;
+          cost.dispose(); probs.dispose(); counts.dispose(); y.dispose();
+          // Release the UI thread at most every ~40 ms.  (setTimeout instead of
+          // requestAnimationFrame: rAF is paused in background tabs, which would
+          // freeze a second client running in another tab/window.)
+          if (performance.now() - lastYield > 40) {
+            await new Promise((r) => setTimeout(r, 0));
+            lastYield = performance.now();
+          }
+        }
+        if (seen > 0) {
+          lastAcc = correct / seen;
+          lastLoss = lossSum / seen;
+          doneEpochs = epoch + 1;
+          opts.onEpoch?.(doneEpochs, lastAcc, lastLoss);
+        }
+      }
     } finally {
-        // Do NOT dispose xData/yData here.
-        // They are cached and reused in later rounds.
+      optimizer.dispose();
     }
+    return { accuracy: lastAcc, loss: lastLoss, seconds: (performance.now() - t0) / 1000, epochs: doneEpochs, timedOut, stopped: this.stopFlag };
+  }
 
-    return {
-        accuracy:
-            parseFloat(
-                finalAccuracy.toFixed(
-                    4
-                )
-            ),
-        loss:
-            parseFloat(
-                finalLoss.toFixed(
-                    4
-                )
-            ),
-    };
-}
+  stop() { this.stopFlag = true; }
 
-// ── Extract weights for transmission ───────────────────────
+  /** Current weights in the wire format (float32 base64). */
+  exportWeights(): WireTensor[] {
+    return this.vars.map((v: { shape: number[]; dataSync: () => Float32Array }, i: number) => ({
+      layer_name: this.arch.layers[i].layer_name,
+      shape: [...v.shape],
+      dtype: "float32" as const,
+      data_b64: f32ToB64(new Float32Array(v.dataSync())),
+    }));
+  }
 
-/**
- * Extract model weights as {shape, data} objects for JSON
- * transmission.
- *
- * Tensors cannot be JSON serialized directly, and the shape
- * must travel with the flattened data so the server (and any
- * client re-loading this model) can correctly reconstruct
- * each tensor.
- */
-export async function extractWeights(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    model: any
-): Promise<
-    {
-        shape: number[];
-        data: number[];
-    }[]
-> {
-    const weights =
-        model.getWeights();
-
-    const extracted =
-        await Promise.all(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            weights.map(
-                async (
-                    tensor: any
-                ) => {
-                    const data =
-                        await tensor.data();
-
-                    return {
-                        shape:
-                            tensor.shape as number[],
-                        data:
-                            Array.from(
-                                data
-                            ) as number[],
-                    };
-                }
-            )
-        );
-
-    return extracted;
-}
-
-// ── US-10: Submit weights to server for FedAvg ─────────────
-
-/**
- * Send locally trained weights to Flask server.
- * Server runs FedAvg when enough clients have submitted.
- *
- * @param model        Trained TF.js model
- * @param clientId     Client ID from registration
- * @param roundNum     Current round number
- * @param datasetSize  Number of local training samples
- * @param metrics      Local training metrics
- */
-export async function submitWeightsToServer(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    model: any,
-    clientId: string,
-    roundNum: number,
-    datasetSize: number,
-    metrics: {
-        accuracy: number;
-        loss: number;
-    }
-): Promise<SubmitResult> {
-    const weights =
-        await extractWeights(
-            model
-        );
-
-    const response =
-        await fetch(
-            `${BACKEND_URL}/submit-update`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type":
-                        "application/json",
-                },
-                body: JSON.stringify(
-                    {
-                        client_id:
-                            clientId,
-                        weights:
-                            weights,
-                        dataset_size:
-                            datasetSize,
-                        metrics:
-                            metrics,
-                        round:
-                            roundNum,
-                    }
-                ),
-            }
-        );
-
-    if (!response.ok) {
-        const error =
-            await response
-                .json()
-                .catch(
-                    () => ({})
-                );
-
-        throw new Error(
-            `Weight submission failed: ${response.status} — ${JSON.stringify(
-                error
-            )}`
-        );
-    }
-
-    return response.json() as Promise<SubmitResult>;
+  dispose() {
+    this.vars.forEach((v) => v.dispose());
+    this.vars = [];
+    this.ids = null;
+    this.labels = null;
+  }
 }
